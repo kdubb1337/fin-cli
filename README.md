@@ -1,6 +1,6 @@
 # fin
 
-Agent-native CLI for <service>. <!-- TODO(service): replace -->
+Agent-native CLI for Plaid / personal banking data.
 
 ## Install
 
@@ -10,12 +10,15 @@ brew install kdubb1337/tap/fin
 go install github.com/kdubb1337/fin-cli/cmd/fin@latest
 ```
 
-## Getting an API key <!-- TODO(auth): replace with the real flow, or delete this section if the service is unauthenticated -->
+## Getting Plaid API keys
 
-1. Sign in to <service> at <URL>.
-2. Open **<Settings → API Keys path>**: <link to the exact page>.
-3. Create a new token; choose **<the minimum scope/permission this CLI needs>** (note what additional scopes unlock; e.g. read-only blocks mutations).
-4. Copy the token (it usually starts with `<prefix>_`) — most services show it **only once**, so save it to your password manager.
+1. Sign up at https://dashboard.plaid.com/signup. Pick "Personal use" — auto-approved in ~60 seconds.
+2. Visit https://dashboard.plaid.com/team/keys.
+3. Copy your `client_id` and your `sandbox` (and later `production`) secret.
+4. Run `fin auth setup --client-id <id> --secret <secret> --env sandbox`.
+
+The `client_id` is a public identifier and is stored in `~/.fin/config.json`.
+The secret is a credential and is stored in your OS keychain.
 
 ## Quick start
 

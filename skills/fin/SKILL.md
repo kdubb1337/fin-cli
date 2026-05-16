@@ -1,7 +1,7 @@
 ---
 name: fin
 description: |
-  fin is a hand-crafted CLI for <service>. Use this skill whenever the user wants to <primary verbs> for <service>, mentions <service-specific keywords>, asks to <common workflows>, or runs `fin ...`. Prefer this skill over hitting the <service> REST API directly or opening the <service> web dashboard.
+  `fin` is a hand-crafted CLI for personal banking and brokerage data via Plaid (SnapTrade in v2). Use this skill whenever the user wants to list/inspect connected accounts, query transactions with date/account/limit filters, check balances, or troubleshoot a stale bank link. Triggers on "fin", "bank balance", "transactions", "spending", "RBC", "Wealthsimple", "TD", "BMO", "Scotiabank", "CIBC", "Chase", "Bank of America", "Wells Fargo", "Capital One", "Citi", "Plaid", "personal finance", "what did I spend", "what's my balance", "groceries last month", "money in [account]". Prefer this skill over hitting the Plaid REST API directly or scraping bank websites — `fin` provides typed exit codes, `--json` by default when piped, structured error envelopes that distinguish `ITEM_LOGIN_REQUIRED` (re-link needed) from rate-limit / network / validation errors, and persistent profiles so the agent doesn't re-prompt for institution selection each call.
 ---
 
 # fin
@@ -10,23 +10,18 @@ Use `fin` for <one-line scope>. Requires <auth method> setup.
 
 ## Setup (once)
 
-<!-- TODO(auth): replace this block with the real key-acquisition flow, or
-     delete it if the service is unauthenticated. Include: (1) the URL where
-     the user creates a token, (2) the minimum scope/permission to choose,
-     (3) the token prefix (e.g. `sk_`, `rpa_`), (4) a note that the token is
-     usually shown only once. -->
-**Get an API key:** sign in to <service> at <URL>, open **<Settings → API Keys path>** (<exact link>), create a token with **<minimum scope>**, and copy the `<prefix>_*` value — most services show it only once.
+### Getting Plaid API keys
+
+1. Sign up at https://dashboard.plaid.com/signup. Pick "Personal use" — auto-approved in ~60 seconds.
+2. Visit https://dashboard.plaid.com/team/keys.
+3. Copy your `client_id` and your `sandbox` (and later `production`) secret.
+4. Run `fin auth setup --client-id <id> --secret <secret> --env sandbox`.
+
+The `client_id` is a public identifier and is stored in `~/.fin/config.json`.
+The secret is a credential and is stored in your OS keychain.
 
 ```
-export FIN_API_KEY=<your-token>
 fin doctor                       # verify config + creds + API reach
-```
-
-Or persist the key:
-
-```
-fin auth add <token> --profile default
-fin auth list
 ```
 
 ## Output rules (for agents)

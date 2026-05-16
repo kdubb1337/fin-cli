@@ -42,8 +42,10 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:   "fin",
-	Short: "Agent-native CLI for <service>", // TODO(service): replace
-	Long: `fin is a hand-crafted, agent-native CLI for <service>.
+	Short: "fin — agent-native CLI for personal banking via Plaid",
+	Long: `fin pulls account and transaction data from US/Canadian banks via Plaid.
+It is designed for AI agents: typed exit codes, --json by default when piped,
+structured errors, persistent profiles.
 
 Output rules:
   - stdout is data; stderr is human progress and errors.

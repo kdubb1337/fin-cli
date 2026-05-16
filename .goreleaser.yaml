@@ -63,7 +63,7 @@ brews:
       owner: kdubb1337
       name: homebrew-tap
     homepage: "https://github.com/kdubb1337/fin-cli"
-    description: "Agent-native CLI for <service>" # TODO(service): replace before first release
+    description: "Agent-native CLI for Plaid / personal banking data"
     license: "MIT"
     test: |
       system "#{bin}/fin", "--version"
