@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -13,7 +12,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 
 	"github.com/kdubb1337/fin-cli/internal/config"
 	finerr "github.com/kdubb1337/fin-cli/internal/errors"
@@ -118,61 +116,40 @@ const SchemaVersion = 1
 var agentContextCmd = &cobra.Command{
 	Use:   "agent-context",
 	Short: "Emit versioned structured introspection for AI agents",
-	Long: `Emits a JSON document describing all commands, flags, enums, profiles,
-and exit codes. Agents read this once instead of crawling --help.
+	Long: `Emits a JSON document describing the shipped verbs, exit-code taxonomy,
+providers, and supported envs. Agents read this once instead of crawling --help.
 
 Bumps schema_version on breaking shape changes.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := buildAgentContext(rootCmd)
-		out, err := json.MarshalIndent(ctx, "", "  ")
-		if err != nil {
-			return err
-		}
-		fmt.Fprintln(os.Stdout, string(out))
-		return nil
-	},
-}
-
-func buildAgentContext(root *cobra.Command) map[string]any {
-	return map[string]any{
-		"schema_version": SchemaVersion,
-		"cli":            root.Name(),
-		"version":        version,
-		"exit_codes": map[string]int{
-			"ok": 0, "generic": 1, "usage": 2, "not_found": 3, "auth": 4,
-			"api": 5, "conflict": 6, "rate_limit": 7, "network": 8,
-			"validation": 9, "timeout": 124,
-		},
-		"commands": describeCommands(root),
-	}
-}
-
-func describeCommands(c *cobra.Command) []map[string]any {
-	out := make([]map[string]any, 0, len(c.Commands()))
-	for _, sub := range c.Commands() {
-		if sub.Hidden || !sub.IsAvailableCommand() {
-			continue
-		}
-		flags := []map[string]any{}
-		sub.LocalFlags().VisitAll(func(f *pflag.Flag) {
-			flags = append(flags, map[string]any{
-				"name":    f.Name,
-				"type":    f.Value.Type(),
-				"default": f.DefValue,
-				"usage":   f.Usage,
-			})
+		return output.Emit(map[string]any{
+			"schema_version": SchemaVersion,
+			"cli":            "fin",
+			"version":        version,
+			"verbs": map[string][]string{
+				"auth":     {"setup", "add", "list", "remove"},
+				"profile":  {"save", "use", "get", "list", "delete"},
+				"accounts": {"list", "get"},
+				"tx":       {"list"},
+				"doctor":   {},
+				"skill":    {"install", "list", "path", "uninstall"},
+			},
+			"exit_codes": map[string]string{
+				"0":   "success",
+				"1":   "generic",
+				"2":   "usage",
+				"3":   "not_found",
+				"4":   "auth (run `fin auth add` to re-link)",
+				"5":   "upstream",
+				"6":   "conflict",
+				"7":   "rate_limited",
+				"8":   "network",
+				"9":   "validation",
+				"124": "timeout",
+			},
+			"providers": []string{"plaid"},
+			"envs":      []string{"sandbox", "production"},
 		})
-		entry := map[string]any{
-			"name":     sub.Name(),
-			"use":      sub.Use,
-			"short":    sub.Short,
-			"example":  sub.Example,
-			"flags":    flags,
-			"children": describeCommands(sub),
-		}
-		out = append(out, entry)
-	}
-	return out
+	},
 }
 
 // --- profile ----------------------------------------------------------------
