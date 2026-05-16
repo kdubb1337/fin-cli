@@ -28,9 +28,6 @@ func mapErrorCode(code string) int {
 }
 
 // translateErr converts a Plaid SDK error into an ExitError with remediation hints.
-// First call sites land in Tasks 7 and 8 (link.go, accounts.go, transactions.go).
-//
-//nolint:unused // wired up by Tasks 7/8
 func translateErr(err error) error {
 	if err == nil {
 		return nil
