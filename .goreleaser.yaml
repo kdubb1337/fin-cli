@@ -1,0 +1,81 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: fin
+    main: ./cmd/fin
+    binary: fin
+    env:
+      - CGO_ENABLED=0  # set 1 if you depend on mattn/go-sqlite3
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X {{ .ModulePath }}/internal/cmd.version={{ .Version }}
+      - -X {{ .ModulePath }}/internal/cmd.commit={{ .Commit }}
+      - -X {{ .ModulePath }}/internal/cmd.date={{ .Date }}
+
+archives:
+  - format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - LICENSE
+      - README.md
+      - skills/**/*
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  use: github
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))?:.+$'
+      order: 0
+    - title: Fixes
+      regexp: '^.*?fix(\(.+\))?:.+$'
+      order: 1
+    - title: Other
+      order: 999
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+
+brews:
+  - name: fin
+    repository:
+      owner: kdubb1337
+      name: homebrew-tap
+    homepage: "https://github.com/kdubb1337/fin-cli"
+    description: "Agent-native CLI for <service>" # TODO(service): replace before first release
+    license: "MIT"
+    test: |
+      system "#{bin}/fin", "--version"
+    install: |
+      bin.install "fin"
+      pkgshare.install "skills" if File.directory?("skills")
+
+dockers:
+  - image_templates:
+      - "ghcr.io/kdubb1337/fin:{{ .Version }}"
+      - "ghcr.io/kdubb1337/fin:latest"
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"

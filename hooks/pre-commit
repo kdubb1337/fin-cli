@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# hooks/pre-commit — local gate before each commit.
+# Enable: git config core.hooksPath hooks
+set -euo pipefail
+./scripts/validate-skills
+./scripts/lint-naming.sh
+make fmt lint test

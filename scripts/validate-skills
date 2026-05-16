@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# scripts/validate-skills — validate every SKILL.md under skills/ has required frontmatter.
+set -euo pipefail
+
+fail=0
+report() { echo "validate-skills: $1" >&2; fail=1; }
+
+shopt -s nullglob
+for skill in skills/*/SKILL.md; do
+  if ! head -1 "$skill" | grep -q '^---$'; then
+    report "$skill: missing YAML frontmatter"
+    continue
+  fi
+  # Read frontmatter block (between the first two --- lines).
+  fm=$(awk '/^---$/{n++; next} n==1' "$skill")
+  if ! grep -qE '^name:[[:space:]]*\S' <<<"$fm"; then
+    report "$skill: missing or empty 'name:' field"
+  fi
+  if ! grep -qE '^description:[[:space:]]*\S|^description:[[:space:]]*\|' <<<"$fm"; then
+    report "$skill: missing or empty 'description:' field"
+  fi
+  body=$(awk '/^---$/{n++; next} n==2 {print}' "$skill")
+  if [[ -z "${body// /}" ]]; then
+    report "$skill: empty body"
+  fi
+done
+
+exit $fail

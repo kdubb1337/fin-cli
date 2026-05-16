@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# scripts/committer — stages the listed files and commits with the given message.
+# Avoids the "stage by accident" failure mode of `git add .` followed by `git commit`.
+set -euo pipefail
+
+msg="${1:-}"; shift || true
+[[ -z "$msg" ]] && { echo "usage: committer <msg> <file...>" >&2; exit 2; }
+[[ "$#" -eq 0 ]] && { echo "committer: no files specified" >&2; exit 2; }
+
+git reset >/dev/null
+git add -- "$@"
+git diff --cached --quiet && { echo "committer: nothing to commit" >&2; exit 1; }
+git commit -m "$msg"
