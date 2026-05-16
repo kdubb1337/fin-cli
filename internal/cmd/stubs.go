@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,11 +10,15 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/kdubb1337/fin-cli/internal/config"
+	finerr "github.com/kdubb1337/fin-cli/internal/errors"
 	"github.com/kdubb1337/fin-cli/internal/output"
+	plaidprov "github.com/kdubb1337/fin-cli/internal/provider/plaid"
 )
 
 // This file holds minimum-viable stubs for the four "Rung 3 floor" commands:
@@ -34,22 +39,75 @@ var doctorCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		type check struct {
 			Name   string `json:"name"`
-			Status string `json:"status"`
+			OK     bool   `json:"ok"`
 			Detail string `json:"detail,omitempty"`
 		}
-		report := struct {
-			OK     bool    `json:"ok"`
-			Checks []check `json:"checks"`
-		}{
-			OK: true,
-			Checks: []check{
-				{Name: "config", Status: "ok"},
-				{Name: "credentials", Status: "skipped", Detail: "no auth backend wired yet"},
-				{Name: "api_reachable", Status: "skipped", Detail: "no API client wired yet"},
-			},
+		out := []check{}
+
+		c, err := config.Load()
+		out = append(out, check{Name: "config_load", OK: err == nil, Detail: errStr(err)})
+		if err != nil {
+			_ = output.Emit(out)
+			return finerr.New(finerr.CodeGeneric, "config load failed")
 		}
-		return output.Emit(report)
+
+		out = append(out, check{Name: "plaid_client_id_set", OK: c.Plaid.ClientID != ""})
+		out = append(out, check{
+			Name:   "plaid_env_valid",
+			OK:     c.Plaid.Env == "sandbox" || c.Plaid.Env == "production",
+			Detail: c.Plaid.Env,
+		})
+
+		_, secErr := config.GetSecret("plaid:client_secret")
+		out = append(out, check{Name: "plaid_secret_in_keychain", OK: secErr == nil, Detail: errStr(secErr)})
+
+		out = append(out, check{
+			Name:   "linked_item_count",
+			OK:     true,
+			Detail: fmt.Sprintf("%d / 10 (Plaid Trial cap)", len(c.Items)),
+		})
+		if len(c.Items) > 8 {
+			out = append(out, check{
+				Name:   "trial_cap_warning",
+				OK:     false,
+				Detail: "approaching Plaid Trial 10-item cap",
+			})
+		}
+
+		if c.Plaid.ClientID != "" && secErr == nil && len(c.Items) > 0 {
+			client, cerr := plaidprov.New(c)
+			if cerr == nil {
+				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer cancel()
+				for id, it := range c.Items {
+					tok, _ := config.GetSecret("plaid:item:" + id)
+					herr := client.Health(ctx, tok)
+					out = append(out, check{
+						Name:   "item_health:" + id,
+						OK:     herr == nil,
+						Detail: it.InstitutionName + " — " + errStr(herr),
+					})
+				}
+			}
+		}
+
+		if err := output.Emit(out); err != nil {
+			return err
+		}
+		for _, c := range out {
+			if !c.OK {
+				return finerr.New(finerr.CodeGeneric, "one or more checks failed")
+			}
+		}
+		return nil
 	},
+}
+
+func errStr(e error) string {
+	if e == nil {
+		return ""
+	}
+	return e.Error()
 }
 
 // --- agent-context ----------------------------------------------------------
