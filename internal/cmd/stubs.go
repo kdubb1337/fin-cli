@@ -118,24 +118,8 @@ func describeCommands(c *cobra.Command) []map[string]any {
 }
 
 // --- profile ----------------------------------------------------------------
-
-var profileCmd = &cobra.Command{
-	Use:   "profile",
-	Short: "Manage named configuration profiles",
-}
-
-var profileListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List saved profiles",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return output.Emit(map[string]any{
-			"profiles": []string{},
-			"hint":     "no profiles saved; create one with: fin profile save <name>",
-		})
-	},
-}
-
-// Stubs for save/use/show/delete go here; same pattern.
+//
+// Real implementation lives in profile.go.
 
 // --- auth -------------------------------------------------------------------
 
@@ -560,8 +544,6 @@ var skillListCmd = &cobra.Command{
 }
 
 func init() {
-	profileCmd.AddCommand(profileListCmd)
-
 	skillInstallCmd.Flags().StringVar(&flagSkillInstallMode, "mode", "symlink", "install mode: symlink|copy")
 	skillInstallCmd.Flags().BoolVar(&flagSkillInstallAll, "all", false, "install to every known agent in the registry")
 	skillInstallCmd.Flags().StringVar(&flagSkillInstallDir, "dir", "", "additional custom skills directory to install into")
@@ -572,5 +554,5 @@ func init() {
 	// mode validation without exposing the flag here.
 
 	skillCmd.AddCommand(skillPathCmd, skillInstallCmd, skillUninstallCmd, skillListCmd)
-	rootCmd.AddCommand(doctorCmd, agentContextCmd, profileCmd, authCmd, skillCmd)
+	rootCmd.AddCommand(doctorCmd, agentContextCmd, authCmd, skillCmd)
 }
