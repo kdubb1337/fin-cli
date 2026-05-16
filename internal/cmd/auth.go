@@ -178,6 +178,81 @@ var authAddCmd = &cobra.Command{
 	},
 }
 
+// auth list shows linked institutions with redacted access tokens.
+
+var authListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "Show linked institutions",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := config.Load()
+		if err != nil {
+			return finerr.Wrap(err, finerr.CodeGeneric, "config: %v", err)
+		}
+		type row struct {
+			ItemID        string `json:"item_id"`
+			Provider      string `json:"provider"`
+			Env           string `json:"env"`
+			Institution   string `json:"institution_name"`
+			InstitutionID string `json:"institution_id"`
+			AddedAt       string `json:"added_at"`
+			TokenRedacted string `json:"token_redacted"`
+		}
+		out := []row{}
+		for id, it := range c.Items {
+			tok, _ := config.GetSecret("plaid:item:" + id)
+			red := "(missing)"
+			if tok != "" && len(tok) > 8 {
+				red = tok[:8] + "…" + tok[len(tok)-4:]
+			}
+			out = append(out, row{
+				ItemID:        id,
+				Provider:      it.Provider,
+				Env:           it.Env,
+				Institution:   it.InstitutionName,
+				InstitutionID: it.InstitutionID,
+				AddedAt:       it.AddedAt.Format(time.RFC3339),
+				TokenRedacted: red,
+			})
+		}
+		return output.Emit(out)
+	},
+}
+
+// auth remove deletes an item from config, cleans up the keychain, and prunes
+// any profiles that pointed at it.
+
+var authRemoveCmd = &cobra.Command{
+	Use:   "remove <item-id>",
+	Short: "Disconnect a linked institution",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := config.Load()
+		if err != nil {
+			return finerr.Wrap(err, finerr.CodeGeneric, "config: %v", err)
+		}
+		id := args[0]
+		if _, ok := c.Items[id]; !ok {
+			return finerr.New(finerr.CodeNotFound, "item %q not found", id)
+		}
+		delete(c.Items, id)
+		for name, p := range c.Profiles {
+			if p.ItemID == id {
+				delete(c.Profiles, name)
+			}
+		}
+		if c.ActiveProfile != "" {
+			if _, ok := c.Profiles[c.ActiveProfile]; !ok {
+				c.ActiveProfile = ""
+			}
+		}
+		_ = config.DeleteSecret("plaid:item:" + id)
+		if err := config.Save(c); err != nil {
+			return finerr.Wrap(err, finerr.CodeGeneric, "save: %v", err)
+		}
+		return output.Emit(map[string]string{"status": "removed", "item_id": id})
+	},
+}
+
 func init() {
 	authSetupCmd.Flags().StringVar(&setupClientID, "client-id", "", "Plaid client_id")
 	authSetupCmd.Flags().StringVar(&setupSecret, "secret", "", "Plaid secret")
@@ -187,4 +262,7 @@ func init() {
 	authAddCmd.Flags().StringVar(&addEnv, "env", "", "sandbox or production (defaults to value from `fin auth setup`)")
 	authAddCmd.Flags().StringVar(&addPublicTok, "public-token", "", "skip browser flow; exchange this public_token directly")
 	authCmd.AddCommand(authAddCmd)
+
+	authCmd.AddCommand(authListCmd)
+	authCmd.AddCommand(authRemoveCmd)
 }

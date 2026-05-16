@@ -144,16 +144,7 @@ var authCmd = &cobra.Command{
 	Short: "Manage credentials and accounts",
 }
 
-var authListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List configured accounts",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return output.Emit(map[string]any{
-			"accounts": []string{},
-			"hint":     "no accounts configured; add one with: fin auth add <id>",
-		})
-	},
-}
+// authListCmd and authRemoveCmd live in auth.go (real impls).
 
 // --- skill ------------------------------------------------------------------
 //
@@ -570,7 +561,6 @@ var skillListCmd = &cobra.Command{
 
 func init() {
 	profileCmd.AddCommand(profileListCmd)
-	authCmd.AddCommand(authListCmd)
 
 	skillInstallCmd.Flags().StringVar(&flagSkillInstallMode, "mode", "symlink", "install mode: symlink|copy")
 	skillInstallCmd.Flags().BoolVar(&flagSkillInstallAll, "all", false, "install to every known agent in the registry")
