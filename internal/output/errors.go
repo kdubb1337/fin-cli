@@ -16,8 +16,8 @@ type CLIError struct {
 	Exit        int      `json:"exit_code"`
 }
 
-func (e *CLIError) Error() string  { return e.Message }
-func (e *CLIError) ExitCode() int  { return e.Exit }
+func (e *CLIError) Error() string { return e.Message }
+func (e *CLIError) ExitCode() int { return e.Exit }
 
 // Errorf builds a CLIError, writes the structured envelope to stderr, and returns
 // it. The caller returns the error from RunE; main.go reads ExitCode().

@@ -25,10 +25,10 @@ var (
 
 // Options carries the flag state from root.go to output helpers.
 type Options struct {
-	JSON, Human, CSV       bool
-	Compact                bool
-	Select                 string
-	Quiet, Verbose, Debug  bool
+	JSON, Human, CSV      bool
+	Compact               bool
+	Select                string
+	Quiet, Verbose, Debug bool
 }
 
 // Configure is called from PersistentPreRunE.

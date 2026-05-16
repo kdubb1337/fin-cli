@@ -28,8 +28,8 @@ import (
 // --- doctor -----------------------------------------------------------------
 
 var doctorCmd = &cobra.Command{
-	Use:   "doctor",
-	Short: "Health check: config, credentials, API reachability",
+	Use:     "doctor",
+	Short:   "Health check: config, credentials, API reachability",
 	Example: `  fin doctor --json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		type check struct {
@@ -351,11 +351,11 @@ func runSkillInstall(args []string, remove bool) error {
 		verb = "uninstall"
 	}
 	payload := map[string]any{
-		"action":      verb,
-		"mode":        flagSkillInstallMode,
-		"source":      srcDir,
-		"dry_run":     flagDryRun,
-		"results":     results,
+		"action":  verb,
+		"mode":    flagSkillInstallMode,
+		"source":  srcDir,
+		"dry_run": flagDryRun,
+		"results": results,
 	}
 	if flagDryRun {
 		return output.EmitDryRun(payload)
