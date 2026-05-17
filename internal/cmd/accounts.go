@@ -11,12 +11,16 @@ import (
 	finerr "github.com/kdubb1337/fin-cli/internal/errors"
 	"github.com/kdubb1337/fin-cli/internal/output"
 	plaidprov "github.com/kdubb1337/fin-cli/internal/provider/plaid"
+	"github.com/kdubb1337/fin-cli/internal/store"
 )
 
 // --item is local to the accounts subtree. --profile is the global persistent
 // flag on rootCmd (flagProfile in root.go); we read it here directly to avoid
 // shadowing.
-var acctFlagItem string
+var (
+	acctFlagItem string
+	acctFlagLive bool
+)
 
 var accountsCmd = &cobra.Command{
 	Use:   "accounts",
@@ -24,9 +28,14 @@ var accountsCmd = &cobra.Command{
 }
 
 var accountsListCmd = &cobra.Command{
-	Use:     "list",
-	Short:   "List all accounts on the resolved item",
-	Example: `  fin accounts list --json`,
+	Use:   "list",
+	Short: "List accounts (cached by default; --live hits Plaid)",
+	Long: `Lists accounts for the resolved item.
+
+By default this reads from the local SQLite cache populated by ` + "`fin sync`" + `.
+Pass --live to hit Plaid directly for fresh balances.`,
+	Example: `  fin accounts list --json
+  fin accounts list --live`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := config.Load()
 		if err != nil {
@@ -37,11 +46,29 @@ var accountsListCmd = &cobra.Command{
 			return finerr.New(finerr.CodeUsage, "%v", err)
 		}
 
+		if !acctFlagLive {
+			path, _ := store.DefaultPath()
+			if _, err := os.Stat(path); err == nil {
+				s, oerr := store.Open(path)
+				if oerr == nil {
+					defer s.Close()
+					rows, qerr := s.ListAccounts(itemID)
+					if qerr == nil && len(rows) > 0 {
+						inst := c.Items[itemID].InstitutionName
+						for i := range rows {
+							rows[i].InstitutionName = inst
+						}
+						return output.Emit(rows)
+					}
+				}
+			}
+			output.Progress("cache miss; falling back to live API (run `fin sync` to populate)")
+		}
+
 		tok, err := config.GetSecret("plaid:item:" + itemID)
 		if err != nil {
 			return finerr.Wrap(err, finerr.CodeAuth, "token: %v", err)
 		}
-
 		client, err := plaidprov.NewForEnv(c, c.Items[itemID].Env)
 		if err != nil {
 			return finerr.Wrap(err, finerr.CodeAuth, "client: %v", err)
@@ -100,6 +127,7 @@ func init() {
 	for _, c := range []*cobra.Command{accountsListCmd, accountsGetCmd} {
 		c.Flags().StringVar(&acctFlagItem, "item", "", "item-id to use (overrides --profile)")
 	}
+	accountsListCmd.Flags().BoolVar(&acctFlagLive, "live", false, "skip the cache and hit Plaid directly")
 	accountsCmd.AddCommand(accountsListCmd, accountsGetCmd)
 	rootCmd.AddCommand(accountsCmd)
 }

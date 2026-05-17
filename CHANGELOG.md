@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.4.0 — 2026-05-16
+
+### Added
+
+- **Rung 4 SQLite mirror.** New `internal/store/` package backed by `modernc.org/sqlite` (pure-Go, no CGO) mirrors items, accounts, and transactions into `~/.fin/cache.db` (override with `$FIN_HOME`). Schema migrations are embedded at build time and keyed off `PRAGMA user_version`. Includes an FTS5 virtual table over transaction `name`, `merchant_name`, and `category_json`.
+- **`fin sync`** — pulls deltas from Plaid into the cache using `/transactions/sync` (cursor-based), upserts added/modified rows, deletes removed ones, refreshes the account snapshot. Cursor is persisted after each page so a crash mid-loop resumes cleanly. Flags: `--item`, `--full`, `--dry-run`, `--max-pages`.
+- **`fin sync status`** — per-item view of last sync time, row counts, and whether a cursor is stored.
+- **`fin sql "<statement>"`** — read-only SQL passthrough against the cache. Opens with `mode=ro` + `query_only=1` and rejects anything that isn't `SELECT` / `WITH` / `EXPLAIN` / `PRAGMA` (including multi-statement payloads). Statement can come from `--query`, a positional arg, or stdin.
+- **`fin search "<query>"`** — full-text search using FTS5 with the standard match operators (prefix*, AND/OR/NOT, "phrase").
+- **`fin tx list` and `fin accounts list` now default to cached reads.** Pass `--live` to bypass the cache and hit Plaid directly. When the cache is empty, both commands fall back to a live call automatically.
+- **`fin doctor`** reports cache-DB health: schema version, file size, row counts, `PRAGMA integrity_check`, and cache-freshness against `items.last_synced_at`.
+- `fin agent-context` schema bumped to v2 and now describes the cache + new verbs.
+
+### Implementation notes
+
+- `/transactions/sync` replaces `/transactions/get` (offset-based) for sync work because it returns explicit added/modified/removed deltas and handles transaction edits/removals correctly. `--live` mode on `fin tx list` still uses `/transactions/get` for offset-friendly pagination.
+- The bundled `SKILL.md` is updated with the new verbs, the schema reference for `fin sql`, and Rung-4 workflow examples.
+
 ## v0.3.1 — 2026-05-16
 
 ### Fixed
