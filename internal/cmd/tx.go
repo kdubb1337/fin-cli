@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"time"
 
@@ -79,14 +78,11 @@ var txListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		var hint string
 		if page.NextCursor != "" {
-			fmt.Fprintf(cmd.ErrOrStderr(), "next page: --cursor=%s\n", page.NextCursor)
+			hint = "next page: --cursor=" + page.NextCursor
 		}
-		return output.Emit(map[string]any{
-			"transactions": page.Transactions,
-			"next_cursor":  page.NextCursor,
-			"count":        len(page.Transactions),
-		})
+		return output.EmitPage(page.Transactions, page.NextCursor, hint)
 	},
 }
 

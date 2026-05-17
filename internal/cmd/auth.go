@@ -115,19 +115,26 @@ var authAddCmd = &cobra.Command{
 					port = n
 				}
 			}
-			l, err := oauthflow.Start(ctx, port)
-			if err != nil {
-				return finerr.Wrap(err, finerr.CodeGeneric, "callback listener: %v", err)
-			}
 
-			session, err := client.StartLink(ctx, l.URL()+"/callback")
+			// Plaid's normal Link is JS-SDK-only — there's no top-level URL
+			// to open. We mint a link_token, then serve a tiny local HTML
+			// page that loads link-initialize.js and forwards the
+			// public_token back to /callback on the same listener.
+			// redirect_uri is left empty: it's only required for OAuth
+			// institutions (production banks that bounce through the bank
+			// site), not for sandbox or non-OAuth flows.
+			session, err := client.StartLink(ctx, "")
 			if err != nil {
 				return err
 			}
 
-			linkURL := "https://link.plaid.com/?token=" + session.Token
-			fmt.Fprintf(cmd.ErrOrStderr(), "Opening Plaid Link in browser…\nIf nothing happens, visit: %s\n", linkURL)
-			_ = browser.OpenURL(linkURL)
+			l, err := oauthflow.Start(ctx, port, session.Token)
+			if err != nil {
+				return finerr.Wrap(err, finerr.CodeGeneric, "callback listener: %v", err)
+			}
+
+			fmt.Fprintf(cmd.ErrOrStderr(), "Opening Plaid Link in browser…\nIf nothing happens, visit: %s\n", l.URL())
+			_ = browser.OpenURL(l.URL())
 
 			res, werr := l.Wait()
 			if werr != nil {

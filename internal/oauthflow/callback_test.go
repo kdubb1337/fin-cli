@@ -11,7 +11,7 @@ func TestCallbackHappyPath(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	l, err := Start(ctx, 0) // 0 → ephemeral port
+	l, err := Start(ctx, 0, "") // 0 → ephemeral port; no link token needed for direct /callback POST
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestCallbackHappyPath(t *testing.T) {
 func TestCallbackTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	l, err := Start(ctx, 0)
+	l, err := Start(ctx, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}

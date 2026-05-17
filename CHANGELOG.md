@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.3.0 — 2026-05-16
+
+### Fixed
+
+- `fin auth add` now actually works. The previous implementation opened `https://link.plaid.com/?token=…`, which is not a real Plaid endpoint — Plaid Link is JS-SDK only and Hosted Link is gated behind a Plaid sales contact. The local callback listener now serves an HTML shell that loads `link-initialize.js` and drives `Plaid.create({…}).open()` directly, forwarding `public_token` back to `/callback` on the same listener. Works for sandbox + non-OAuth institutions on a Plaid free trial.
+- Redirect URI sent to `link_token/create` now uses `localhost` rather than `127.0.0.1`. Plaid's allowed-redirect-URIs allowlist is byte-exact and only accepts `localhost` as the loopback host.
+- `fin tx list --csv` was emitting the wrapper object (`count,next_cursor,transactions` header with the transaction list stringified into one cell) instead of one CSV row per transaction. Switched to `output.EmitPage`, which is the existing helper designed for this.
+
+### Added
+
+- `--human` is now a real plain-text table renderer (was a stub returning pretty JSON). Stable column order via a priority list; missing optional fields render as blank cells. No new dependencies.
+- `--csv` column order is now stable and uses the same priority list as `--human`. Previously non-deterministic and could drop columns when the first row lacked optional fields.
+- `fin auth add` success page auto-closes the browser tab after a 5-second countdown, with a "Close now" link as fallback for browsers that block scripted `window.close()`.
+
 ## v0.2.0 — 2026-05-16
 
 - Repository made public.

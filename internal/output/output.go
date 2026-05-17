@@ -4,8 +4,10 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/mattn/go-isatty"
@@ -123,14 +125,14 @@ func emitCSV(v any) error {
 	}
 	w := csv.NewWriter(out)
 	defer w.Flush()
-	header := keysOf(rows[0])
+	header := orderedKeys(unionKeys(rows))
 	if err := w.Write(header); err != nil {
 		return err
 	}
 	for _, r := range rows {
 		rec := make([]string, len(header))
 		for i, k := range header {
-			rec[i] = fmt.Sprintf("%v", r[k])
+			rec[i] = formatCell(r[k])
 		}
 		if err := w.Write(rec); err != nil {
 			return err
@@ -139,10 +141,65 @@ func emitCSV(v any) error {
 	return nil
 }
 
+// emitHuman renders a plain-text table to stdout. Columns are stable across
+// runs (priority list + alpha fallback). Slices become row-per-item tables;
+// single objects render as a one-row table.
 func emitHuman(v any) error {
-	// Minimal human fallback: pretty JSON. Replace with a real table renderer
-	// (e.g. tablewriter) gated on isatty(stdout) if you ship a human UI.
-	return emitJSON(v)
+	rows := toRows(v)
+	if len(rows) == 0 {
+		fmt.Fprintln(out, "(no rows)")
+		return nil
+	}
+	headers := orderedKeys(unionKeys(rows))
+	widths := make([]int, len(headers))
+	for i, h := range headers {
+		widths[i] = len(h)
+	}
+	body := make([][]string, len(rows))
+	for ri, r := range rows {
+		cells := make([]string, len(headers))
+		for i, h := range headers {
+			cells[i] = formatCell(r[h])
+			if n := len(cells[i]); n > widths[i] {
+				widths[i] = n
+			}
+		}
+		body[ri] = cells
+	}
+	writeHumanRow(out, headers, widths)
+	seps := make([]string, len(headers))
+	for i, w := range widths {
+		seps[i] = strings.Repeat("-", w)
+	}
+	writeHumanRow(out, seps, widths)
+	for _, row := range body {
+		writeHumanRow(out, row, widths)
+	}
+	return nil
+}
+
+func writeHumanRow(w io.Writer, cells []string, widths []int) {
+	parts := make([]string, len(cells))
+	for i, c := range cells {
+		parts[i] = c + strings.Repeat(" ", widths[i]-len(c))
+	}
+	fmt.Fprintln(w, strings.Join(parts, "  "))
+}
+
+func formatCell(v any) string {
+	if v == nil {
+		return ""
+	}
+	switch x := v.(type) {
+	case string:
+		return x
+	case bool:
+		if x {
+			return "true"
+		}
+		return "false"
+	}
+	return fmt.Sprintf("%v", v)
 }
 
 func toRows(v any) []map[string]any {
@@ -164,12 +221,48 @@ func toMap(v any) map[string]any {
 	return m
 }
 
-func keysOf(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
+// humanFieldPriority gives CSV/human renderers a stable, semantically-ordered
+// column layout. Fields present in a row land in this order first; everything
+// else falls through to alphabetical. Tune freely — order here is the only
+// place column priority is configured.
+var humanFieldPriority = []string{
+	"name", "institution_name",
+	"date", "amount", "currency",
+	"type", "subtype", "status", "active",
+	"balance", "available_balance",
+	"merchant_name", "pending",
+	"added_at", "env", "provider",
+	"mask", "official_name",
+	"id", "item_id", "account_id", "institution_id", "token_redacted",
+}
+
+func unionKeys(rows []map[string]any) map[string]struct{} {
+	keys := map[string]struct{}{}
+	for _, r := range rows {
+		for k := range r {
+			keys[k] = struct{}{}
+		}
 	}
 	return keys
+}
+
+func orderedKeys(keys map[string]struct{}) []string {
+	seen := map[string]bool{}
+	order := make([]string, 0, len(keys))
+	for _, k := range humanFieldPriority {
+		if _, ok := keys[k]; ok {
+			order = append(order, k)
+			seen[k] = true
+		}
+	}
+	rest := make([]string, 0, len(keys))
+	for k := range keys {
+		if !seen[k] {
+			rest = append(rest, k)
+		}
+	}
+	sort.Strings(rest)
+	return append(order, rest...)
 }
 
 // project applies --compact and --select to a payload before emission.
