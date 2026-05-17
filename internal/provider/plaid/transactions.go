@@ -68,6 +68,52 @@ func (c *Client) ListTransactions(ctx context.Context, accessToken string, opts 
 	return provider.TxPage{Transactions: out, NextCursor: nextCursor}, nil
 }
 
+// SyncTransactions wraps Plaid /transactions/sync. Plaid returns up to ~500
+// rows per call; the caller is expected to loop while HasMore is true and
+// persist NextCursor after each successful page so a crash mid-loop resumes.
+func (c *Client) SyncTransactions(ctx context.Context, accessToken, cursor string) (provider.TxSyncPage, error) {
+	req := plaid.NewTransactionsSyncRequest(accessToken)
+	if cursor != "" {
+		req.SetCursor(cursor)
+	}
+	req.SetCount(500)
+
+	resp, _, err := c.api.PlaidApi.TransactionsSync(ctx).TransactionsSyncRequest(*req).Execute()
+	if err != nil {
+		return provider.TxSyncPage{}, translateErr(err)
+	}
+
+	conv := func(in []plaid.Transaction) []provider.Transaction {
+		out := make([]provider.Transaction, 0, len(in))
+		for _, t := range in {
+			d, _ := time.Parse("2006-01-02", t.GetDate())
+			out = append(out, provider.Transaction{
+				ID:           t.GetTransactionId(),
+				AccountID:    t.GetAccountId(),
+				Date:         d,
+				Amount:       t.GetAmount(),
+				Currency:     t.GetIsoCurrencyCode(),
+				Name:         t.GetName(),
+				MerchantName: t.GetMerchantName(),
+				Pending:      t.GetPending(),
+				Category:     t.GetCategory(),
+			})
+		}
+		return out
+	}
+	removed := make([]string, 0, len(resp.GetRemoved()))
+	for _, r := range resp.GetRemoved() {
+		removed = append(removed, r.GetTransactionId())
+	}
+	return provider.TxSyncPage{
+		Added:      conv(resp.GetAdded()),
+		Modified:   conv(resp.GetModified()),
+		Removed:    removed,
+		NextCursor: resp.GetNextCursor(),
+		HasMore:    resp.GetHasMore(),
+	}, nil
+}
+
 func (c *Client) Health(ctx context.Context, accessToken string) error {
 	req := plaid.NewItemGetRequest(accessToken)
 	_, _, err := c.api.PlaidApi.ItemGet(ctx).ItemGetRequest(*req).Execute()

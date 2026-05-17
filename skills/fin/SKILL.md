@@ -241,6 +241,8 @@ fin accounts list --item kJEKMqAyNqUL... --compact
 ]
 ```
 
+**`fin accounts list` is also cached by default.** Pass `--live` to bypass the cache for a fresh balance read.
+
 ### `fin accounts get <account-id>`
 
 Fetch a single account by id. Same shape as one element of `accounts list`.
@@ -258,10 +260,13 @@ fin tx list                                          # default: last 1 month, 25
 fin tx list --since 2026-04-01 --until 2026-05-01    # YYYY-MM-DD
 fin tx list --account BxBXxLj1m4... --limit 100
 fin tx list --cursor <next-cursor-from-stderr>
+fin tx list --live                                   # bypass cache; hit Plaid directly
 fin transactions list --profile chequing --json      # alias works the same
 ```
 
-Pagination: the next cursor (if any) is printed to stderr as `next page: --cursor=<value>` and also returned in the JSON envelope as `next_cursor`.
+**Default is cached.** `fin tx list` reads from the local SQLite mirror at `~/.fin/cache.db` (populated by `fin sync`). Pass `--live` to bypass the cache and call Plaid directly; this counts against your Plaid API quota and is slower. When the cache file doesn't exist or is empty, `fin tx list` falls back to a live call automatically and prints a hint on stderr.
+
+Pagination: the next cursor (if any) is printed to stderr as `next page: --cursor=<value>` and also returned in the JSON envelope as `next_cursor`. Cached calls use a numeric offset cursor; live calls use Plaid's cursor format.
 
 ```json
 {
@@ -356,6 +361,105 @@ fin agent-context --json
 }
 ```
 
+## Local cache (Rung 4)
+
+`fin` maintains a SQLite mirror of upstream data at `~/.fin/cache.db` (override location with `$FIN_HOME=<dir>`). This is the canonical read path for `fin tx list`, `fin accounts list`, `fin search`, and `fin sql`. Populate and refresh it with `fin sync`.
+
+The mirror cuts Plaid API call count dramatically — most agent sessions hit the cache exclusively. Live calls are still one `--live` flag away.
+
+### `fin sync`
+
+Pulls deltas from Plaid into the local cache. Uses `/transactions/sync` (cursor-based) so each run only fetches what changed since the last call. Refreshes the account snapshot (balances) on every run.
+
+```
+fin sync                              # all linked items
+fin sync --item kJEKMqAyNqUL...       # just one item
+fin sync --full                       # reset the cursor and re-mirror everything
+fin sync --dry-run                    # show what would happen
+fin sync --max-pages 4                # cap pages per item (default: until has_more=false)
+```
+
+```json
+{
+  "dry_run": false,
+  "items": [
+    {
+      "item_id": "kJEKMqAyNqUL...",
+      "institution_name": "First Platypus Bank",
+      "accounts": 3,
+      "added": 42,
+      "modified": 0,
+      "removed": 0,
+      "pages": 1,
+      "next_cursor": "abc123...",
+      "status": "ok"
+    }
+  ]
+}
+```
+
+The cursor is persisted after each successful page, so a crash mid-loop resumes cleanly on the next `fin sync` invocation. `fin sync --full` wipes the cursor first, which is the right recovery move if you suspect the cache has drifted.
+
+### `fin sync status`
+
+Per-item view of the cache: last sync time, transaction/account counts, whether a cursor is stored.
+
+```
+fin sync status --json
+```
+
+```json
+[
+  {
+    "item_id": "kJEKMqAyNqUL...",
+    "provider": "plaid",
+    "env": "production",
+    "institution_name": "First Platypus Bank",
+    "last_synced_at": "2026-05-16T22:14:08Z",
+    "transaction_count": 1842,
+    "account_count": 3,
+    "has_cursor": true
+  }
+]
+```
+
+### `fin search <query>`
+
+Full-text search across cached transactions using SQLite FTS5. The query is passed through to FTS5 as-is — prefix*, AND/OR/NOT, "phrase", and ^ all work.
+
+```
+fin search "starbucks"
+fin search "uber OR lyft" --since 2026-01-01
+fin search "amazon*" --account acc_abc --limit 50
+fin search "groceries" --item kJEKMqAyNqUL...
+```
+
+Returns the same row shape as `fin tx list`.
+
+### `fin sql "<statement>"`
+
+Read-only SQL passthrough against the cache. Opens the DB in `mode=ro` with `PRAGMA query_only=1`; the parser additionally rejects anything that isn't `SELECT` / `WITH` / `EXPLAIN` / `PRAGMA`. Multi-statement input (a write hidden after a SELECT) is rejected.
+
+```
+fin sql "SELECT date, name, amount FROM transactions ORDER BY date DESC LIMIT 10"
+fin sql "SELECT category_json, SUM(amount) FROM transactions GROUP BY category_json"
+echo "SELECT COUNT(*) AS n FROM transactions" | fin sql
+fin sql --query "SELECT * FROM accounts" --json
+fin sql --max-rows 5000 "SELECT * FROM transactions"
+```
+
+The schema mirrors the public domain model with a few storage-only fields:
+
+| Table | Columns |
+|-------|---------|
+| `items` | `id, provider, env, institution_id, institution_name, added_at, last_synced_at` |
+| `accounts` | `id, item_id, name, official_name, mask, type, subtype, currency, balance, available_balance, updated_at` |
+| `transactions` | `id, item_id, account_id, date, amount, currency, name, merchant_name, pending, category_json, updated_at` |
+| `transactions_fts` | virtual FTS5 over `name, merchant_name, category_json` (use `MATCH`) |
+| `sync_cursors` | `item_id, resource, cursor, updated_at` |
+
+`date` is stored as ISO `YYYY-MM-DD`; `updated_at` and `last_synced_at` are RFC 3339 in UTC. `category_json` is a JSON-encoded array; use `json_each(category_json)` for breakdowns.
+
 ## Profiles and item resolution
 
 A **profile** is a human-friendly name that maps to a Plaid `item_id`. Stored in `~/.fin/config.json` as `profiles: { name -> { item_id } }` plus an `active_profile` pointer.
@@ -393,11 +497,36 @@ If you only have one institution, the auto-created `default` profile is already 
 ### "What did I spend on groceries last month?"
 
 ```
-fin tx list --since 2026-04-01 --until 2026-05-01 --limit 200 --json | \
+fin sync                                                    # if cache isn't already fresh
+fin sql "SELECT SUM(amount) AS total
+         FROM transactions
+         WHERE date >= '2026-04-01' AND date < '2026-05-01'
+           AND category_json LIKE '%Groceries%'"
+```
+
+Or via FTS5 if you want to match by merchant name rather than Plaid category:
+
+```
+fin search "wholefoods OR trader OR safeway" --since 2026-04-01 --until 2026-05-01 --limit 500
+```
+
+If you'd rather stay live (skip the cache):
+
+```
+fin tx list --live --since 2026-04-01 --until 2026-05-01 --limit 200 --json | \
   jq '[.transactions[] | select(.category[]? == "Food and Drink" or .category[]? == "Groceries") | .amount] | add'
 ```
 
 Plaid's category vocabulary is documented at <https://plaid.com/docs/api/products/transactions/#categoriesget>. Negative numbers = refunds/credits; sum as-is.
+
+### "Group spending by month"
+
+```
+fin sql "SELECT strftime('%Y-%m', date) AS month, ROUND(SUM(amount), 2) AS total
+         FROM transactions
+         WHERE date >= date('now', '-6 months')
+         GROUP BY month ORDER BY month DESC"
+```
 
 ### "I'm seeing exit code 4 from `tx list` — what now?"
 
@@ -437,7 +566,6 @@ Default mode is `--mode=symlink`; pass `--mode=copy` for a snapshot install (use
 - **Plaid only.** SnapTrade (for stock/crypto brokerage data outside North American banks) lands in v2.
 - **No holdings, no investment positions.** v1 covers `/accounts`, `/transactions`, `/item` only.
 - **No spending categories aggregation, no budget summaries.** Use `jq` on `tx list --json`; a `fin spending summary` verb is on the v2 roadmap.
-- **No SQLite mirror.** Every call goes straight to Plaid. v2 will add an optional Rung-4 local mirror with `fin sync` for offline / repeat queries.
 - **No webhook handler.** Plaid webhooks (TRANSACTIONS\_DEFAULT\_UPDATE, ITEM\_LOGIN\_REQUIRED) are not consumed; treat `fin doctor` and exit code `4` as the polling-style equivalent.
 
 ## Notes

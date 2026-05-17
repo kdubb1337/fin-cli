@@ -17,6 +17,7 @@ import (
 	finerr "github.com/kdubb1337/fin-cli/internal/errors"
 	"github.com/kdubb1337/fin-cli/internal/output"
 	plaidprov "github.com/kdubb1337/fin-cli/internal/provider/plaid"
+	"github.com/kdubb1337/fin-cli/internal/store"
 )
 
 // This file holds minimum-viable stubs for the four "Rung 3 floor" commands:
@@ -72,6 +73,36 @@ var doctorCmd = &cobra.Command{
 			})
 		}
 
+		// Rung 4 cache health.
+		dbPath, _ := store.DefaultPath()
+		if _, statErr := os.Stat(dbPath); statErr == nil {
+			s, oerr := store.Open(dbPath)
+			if oerr != nil {
+				out = append(out, check{Name: "cache_db_open", OK: false, Detail: oerr.Error()})
+			} else {
+				stats, _ := s.Stats()
+				integrity, ierr := s.IntegrityCheck()
+				out = append(out, check{
+					Name:   "cache_db",
+					OK:     ierr == nil && integrity == "ok",
+					Detail: fmt.Sprintf("v%d, %d bytes, %d items / %d accounts / %d txs (%s)", stats.SchemaVersion, stats.SizeBytes, stats.ItemCount, stats.AccountCount, stats.TransactionCount, integrity),
+				})
+				if last, lerr := s.LastSyncedAt(); lerr == nil && !last.IsZero() {
+					age := time.Since(last)
+					out = append(out, check{
+						Name:   "cache_freshness",
+						OK:     age < 24*time.Hour,
+						Detail: fmt.Sprintf("oldest sync %s ago", age.Round(time.Minute)),
+					})
+				} else if stats.ItemCount > 0 {
+					out = append(out, check{Name: "cache_freshness", OK: false, Detail: "no sync yet; run `fin sync`"})
+				}
+				_ = s.Close()
+			}
+		} else if len(c.Items) > 0 {
+			out = append(out, check{Name: "cache_db", OK: false, Detail: "cache db not found; run `fin sync` to create it"})
+		}
+
 		if c.Plaid.ClientID != "" && secErr == nil && len(c.Items) > 0 {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
@@ -107,6 +138,16 @@ var doctorCmd = &cobra.Command{
 	},
 }
 
+// dbPathOrEmpty returns the cache DB path so agent-context can advertise it,
+// or "" if we can't resolve $HOME.
+func dbPathOrEmpty() string {
+	p, err := store.DefaultPath()
+	if err != nil {
+		return ""
+	}
+	return p
+}
+
 func errStr(e error) string {
 	if e == nil {
 		return ""
@@ -117,7 +158,7 @@ func errStr(e error) string {
 // --- agent-context ----------------------------------------------------------
 
 // SchemaVersion is bumped on any breaking change to the agent-context output shape.
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 var agentContextCmd = &cobra.Command{
 	Use:   "agent-context",
@@ -136,8 +177,17 @@ Bumps schema_version on breaking shape changes.`,
 				"profile":  {"save", "use", "get", "list", "delete"},
 				"accounts": {"list", "get"},
 				"tx":       {"list"},
+				"sync":     {"", "status"},
+				"sql":      {""},
+				"search":   {""},
 				"doctor":   {},
 				"skill":    {"install", "list", "path", "uninstall"},
+			},
+			"cache": map[string]any{
+				"path":           dbPathOrEmpty(),
+				"schema_version": 1,
+				"populated_by":   "fin sync",
+				"queried_by":     []string{"fin tx list", "fin accounts list", "fin search", "fin sql"},
 			},
 			"exit_codes": map[string]string{
 				"0":   "success",

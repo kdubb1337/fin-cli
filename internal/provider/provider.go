@@ -57,6 +57,17 @@ type TxPage struct {
 	NextCursor   string
 }
 
+// TxSyncPage is one page of /transactions/sync output. Added and Modified are
+// merged on the caller side via upsert; Removed carries provider-ids only.
+// NextCursor is opaque — store it as-is and pass it back on the next call.
+type TxSyncPage struct {
+	Added      []Transaction
+	Modified   []Transaction
+	Removed    []string
+	NextCursor string
+	HasMore    bool
+}
+
 type Provider interface {
 	Name() string
 	StartLink(ctx context.Context, redirectURI string) (LinkSession, error)
@@ -64,5 +75,8 @@ type Provider interface {
 	ListAccounts(ctx context.Context, accessToken string) ([]Account, error)
 	GetAccount(ctx context.Context, accessToken, accountID string) (Account, error)
 	ListTransactions(ctx context.Context, accessToken string, opts TxOptions) (TxPage, error)
+	// SyncTransactions returns one page of delta updates since `cursor`. Pass
+	// "" to start from the beginning; loop while HasMore.
+	SyncTransactions(ctx context.Context, accessToken, cursor string) (TxSyncPage, error)
 	Health(ctx context.Context, accessToken string) error
 }

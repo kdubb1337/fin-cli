@@ -30,8 +30,11 @@ macOS, Secret Service on Linux).
 fin auth setup --client-id <id> --secret <secret> --env sandbox
 fin auth add                          # opens Plaid Link in your browser
 fin doctor
-fin accounts list
+fin sync                              # mirror accounts + transactions into ~/.fin/cache.db
+fin accounts list                     # reads cache
 fin tx list --since 2026-04-01 --until 2026-05-01
+fin sql "SELECT date, name, amount FROM transactions ORDER BY date DESC LIMIT 10"
+fin search "starbucks"
 ```
 
 The first `fin auth add` on a fresh config auto-creates a profile named
