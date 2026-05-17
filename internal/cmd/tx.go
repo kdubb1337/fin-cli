@@ -50,7 +50,7 @@ var txListCmd = &cobra.Command{
 		if err != nil {
 			return finerr.Wrap(err, finerr.CodeAuth, "token: %v", err)
 		}
-		client, err := plaidprov.New(c)
+		client, err := plaidprov.NewForEnv(c, c.Items[itemID].Env)
 		if err != nil {
 			return finerr.Wrap(err, finerr.CodeAuth, "client: %v", err)
 		}

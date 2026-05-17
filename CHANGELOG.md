@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.3.1 — 2026-05-16
+
+### Fixed
+
+- `--human` table renderer now computes column widths using terminal cell width instead of byte length. Rows containing emoji (e.g. `💳 Spending`) or text-presentation symbols with VS-16 (e.g. `☠️`) no longer push subsequent columns out of alignment. Per UTS #51, only code points with `Emoji_Presentation=Yes` are widened to 2 cells — text-presentation symbols (☠ ★ ✓ ☂) stay at 1 cell to match how terminals actually render them. Still dependency-free.
+- `fin accounts list/get`, `fin tx list`, and `fin doctor` now build their Plaid client from each item's stored `env` (via new `plaid.NewForEnv`). Previously every item was forced through `cfg.Plaid.Env`, so a config holding both sandbox and production items would silently hit the wrong API endpoint for one of them.
+
+### Added
+
+- `fin auth add --use` repoints the `default` profile at the newly-linked item and activates it in one step. Without `--use`, the response includes a `hint` showing exactly which profile command to run if you want to switch.
+- `fin auth list` now includes an `active` boolean per item indicating whether it backs the currently active profile.
+- `fin profile` help now shows realistic examples (`profile use`, `profile save default --item <id>`, etc.).
+
 ## v0.3.0 — 2026-05-16
 
 ### Fixed

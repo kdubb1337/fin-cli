@@ -73,19 +73,25 @@ var doctorCmd = &cobra.Command{
 		}
 
 		if c.Plaid.ClientID != "" && secErr == nil && len(c.Items) > 0 {
-			client, cerr := plaidprov.New(c)
-			if cerr == nil {
-				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-				defer cancel()
-				for id, it := range c.Items {
-					tok, _ := config.GetSecret("plaid:item:" + id)
-					herr := client.Health(ctx, tok)
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			for id, it := range c.Items {
+				tok, _ := config.GetSecret("plaid:item:" + id)
+				client, cerr := plaidprov.NewForEnv(c, it.Env)
+				if cerr != nil {
 					out = append(out, check{
 						Name:   "item_health:" + id,
-						OK:     herr == nil,
-						Detail: it.InstitutionName + " — " + errStr(herr),
+						OK:     false,
+						Detail: it.InstitutionName + " — " + cerr.Error(),
 					})
+					continue
 				}
+				herr := client.Health(ctx, tok)
+				out = append(out, check{
+					Name:   "item_health:" + id,
+					OK:     herr == nil,
+					Detail: it.InstitutionName + " (" + it.Env + ") — " + errStr(herr),
+				})
 			}
 		}
 

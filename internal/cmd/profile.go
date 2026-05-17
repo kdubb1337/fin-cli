@@ -11,6 +11,10 @@ import (
 var profileCmd = &cobra.Command{
 	Use:   "profile",
 	Short: "Manage named profiles (name -> item-id)",
+	Example: `  fin profile list
+  fin profile use prod                           # switch the active profile
+  fin profile save default --item <item-id>     # repoint the default at a different item
+  fin profile save prod    --item <item-id>     # create/update a named profile`,
 }
 
 var profileSaveItem string

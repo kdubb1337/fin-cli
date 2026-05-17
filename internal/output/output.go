@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/mattn/go-isatty"
 )
@@ -153,14 +154,14 @@ func emitHuman(v any) error {
 	headers := orderedKeys(unionKeys(rows))
 	widths := make([]int, len(headers))
 	for i, h := range headers {
-		widths[i] = len(h)
+		widths[i] = displayWidth(h)
 	}
 	body := make([][]string, len(rows))
 	for ri, r := range rows {
 		cells := make([]string, len(headers))
 		for i, h := range headers {
 			cells[i] = formatCell(r[h])
-			if n := len(cells[i]); n > widths[i] {
+			if n := displayWidth(cells[i]); n > widths[i] {
 				widths[i] = n
 			}
 		}
@@ -181,9 +182,98 @@ func emitHuman(v any) error {
 func writeHumanRow(w io.Writer, cells []string, widths []int) {
 	parts := make([]string, len(cells))
 	for i, c := range cells {
-		parts[i] = c + strings.Repeat(" ", widths[i]-len(c))
+		pad := widths[i] - displayWidth(c)
+		if pad < 0 {
+			pad = 0
+		}
+		parts[i] = c + strings.Repeat(" ", pad)
 	}
 	fmt.Fprintln(w, strings.Join(parts, "  "))
+}
+
+// displayWidth approximates the terminal cell width of s. Combining marks,
+// variation selectors, and ZWJ contribute 0; CJK and default-emoji-presentation
+// code points contribute 2; everything else contributes 1. Good enough for
+// table alignment without pulling in golang.org/x/text or go-runewidth.
+//
+// Note: in the U+2600-U+27BF block most symbols (☠ ★ ✓ ☂) are "default text
+// presentation" per UTS #51 and render 1-wide in most terminals even when
+// followed by VS-16. Only specific Emoji_Presentation=Yes code points are
+// promoted to wide here.
+func displayWidth(s string) int {
+	w := 0
+	for _, r := range s {
+		switch {
+		case r == 0x200D, // zero-width joiner
+			r >= 0xFE00 && r <= 0xFE0F, // variation selectors
+			r == 0x2060, r == 0xFEFF,
+			unicode.IsMark(r):
+			// zero width
+		case r >= 0x1100 && r <= 0x115F, // Hangul Jamo
+			r >= 0x2E80 && r <= 0x303E, // CJK radicals/punctuation
+			r >= 0x3041 && r <= 0x33FF, // Hiragana/Katakana/CJK symbols
+			r >= 0x3400 && r <= 0x4DBF, // CJK Ext A
+			r >= 0x4E00 && r <= 0x9FFF, // CJK Unified
+			r >= 0xA000 && r <= 0xA4CF, // Yi
+			r >= 0xAC00 && r <= 0xD7A3, // Hangul Syllables
+			r >= 0xF900 && r <= 0xFAFF, // CJK Compat
+			r >= 0xFE30 && r <= 0xFE4F, // CJK Compat Forms
+			r >= 0xFF00 && r <= 0xFF60, // Fullwidth
+			r >= 0xFFE0 && r <= 0xFFE6,
+			r >= 0x1F300 && r <= 0x1F64F, // Emoji
+			r >= 0x1F680 && r <= 0x1F6FF, // Transport
+			r >= 0x1F700 && r <= 0x1F9FF, // Supplemental symbols
+			r >= 0x1FA00 && r <= 0x1FAFF, // Symbols Ext-A
+			r >= 0x20000 && r <= 0x3FFFD, // CJK Ext B-F
+			isDefaultEmojiPresentation(r):
+			w += 2
+		default:
+			w++
+		}
+	}
+	return w
+}
+
+// isDefaultEmojiPresentation reports whether r is in the BMP and has the
+// Unicode property Emoji_Presentation=Yes (UTS #51), i.e. it renders as a
+// wide emoji glyph even without a VS-16 selector. Covers the singletons in
+// the U+2300-U+27BF symbol blocks plus a few in U+2B00-U+2BFF.
+func isDefaultEmojiPresentation(r rune) bool {
+	switch r {
+	case 0x231A, 0x231B, // watch, hourglass
+		0x23F0, 0x23F3, // alarm, hourglass flowing
+		0x25FD, 0x25FE, // small squares
+		0x2614, 0x2615, // umbrella, hot beverage
+		0x267F,         // wheelchair
+		0x2693,         // anchor
+		0x26A1,         // high voltage
+		0x26AA, 0x26AB, // circles
+		0x26BD, 0x26BE, // soccer, baseball
+		0x26C4, 0x26C5, // snowman, sun behind cloud
+		0x26CE,         // ophiuchus
+		0x26D4,         // no entry
+		0x26EA,         // church
+		0x26F5,         // boat
+		0x26FA,         // tent
+		0x26FD,         // fuel pump
+		0x2705,         // white heavy check
+		0x270A, 0x270B, // fist, raised hand
+		0x2728,         // sparkles
+		0x274C, 0x274E, // cross marks
+		0x2757,         // heavy exclamation
+		0x27B0, 0x27BF, // curly loops
+		0x2B50, 0x2B55: // star, hollow red circle
+		return true
+	}
+	switch {
+	case r >= 0x23E9 && r <= 0x23EC, // fast-forward/rewind
+		r >= 0x2648 && r <= 0x2653, // zodiac
+		r >= 0x26F2 && r <= 0x26F3, // fountain, golf
+		r >= 0x2753 && r <= 0x2755, // question marks
+		r >= 0x2795 && r <= 0x2797: // heavy plus/minus/divide
+		return true
+	}
+	return false
 }
 
 func formatCell(v any) string {

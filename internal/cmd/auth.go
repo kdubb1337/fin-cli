@@ -75,6 +75,7 @@ var authSetupCmd = &cobra.Command{
 var (
 	addEnv       string
 	addPublicTok string
+	addUse       bool
 )
 
 var authAddCmd = &cobra.Command{
@@ -91,9 +92,8 @@ var authAddCmd = &cobra.Command{
 		if addEnv == "" {
 			return finerr.New(finerr.CodeUsage, "no env configured; run `fin auth setup` first")
 		}
-		c.Plaid.Env = addEnv
 
-		client, err := plaidprov.New(c)
+		client, err := plaidprov.NewForEnv(c, addEnv)
 		if err != nil {
 			return finerr.Wrap(err, finerr.CodeAuth, "plaid client: %v", err)
 		}
@@ -166,22 +166,34 @@ var authAddCmd = &cobra.Command{
 			InstitutionName: instName,
 			AddedAt:         time.Now().UTC(),
 		}
-		// Create a default profile if none exists yet
-		if len(c.Profiles) == 0 {
+		// Create a default profile if none exists yet, or repoint it when --use is set.
+		profileAction := "unchanged"
+		switch {
+		case len(c.Profiles) == 0:
 			c.Profiles = map[string]config.Profile{"default": {ItemID: ex.ItemID}}
 			c.ActiveProfile = "default"
+			profileAction = "created_default"
+		case addUse:
+			c.Profiles["default"] = config.Profile{ItemID: ex.ItemID}
+			c.ActiveProfile = "default"
+			profileAction = "repointed_default"
 		}
 		if err := config.Save(c); err != nil {
 			return finerr.Wrap(err, finerr.CodeGeneric, "save: %v", err)
 		}
 
-		return output.Emit(map[string]string{
+		out := map[string]string{
 			"status":           "linked",
 			"item_id":          ex.ItemID,
 			"institution_id":   instID,
 			"institution_name": instName,
 			"env":              addEnv,
-		})
+			"profile":          profileAction,
+		}
+		if profileAction == "unchanged" {
+			out["hint"] = fmt.Sprintf("active profile %q still points at %q; pass --use to repoint it at this item, or run: fin profile save default --item %s", c.ActiveProfile, c.Profiles[c.ActiveProfile].ItemID, ex.ItemID)
+		}
+		return output.Emit(out)
 	},
 }
 
@@ -195,6 +207,10 @@ var authListCmd = &cobra.Command{
 		if err != nil {
 			return finerr.Wrap(err, finerr.CodeGeneric, "config: %v", err)
 		}
+		activeItem := ""
+		if p, ok := c.Profiles[c.ActiveProfile]; ok {
+			activeItem = p.ItemID
+		}
 		type row struct {
 			ItemID        string `json:"item_id"`
 			Provider      string `json:"provider"`
@@ -203,6 +219,7 @@ var authListCmd = &cobra.Command{
 			InstitutionID string `json:"institution_id"`
 			AddedAt       string `json:"added_at"`
 			TokenRedacted string `json:"token_redacted"`
+			Active        bool   `json:"active"`
 		}
 		out := []row{}
 		for id, it := range c.Items {
@@ -219,6 +236,7 @@ var authListCmd = &cobra.Command{
 				InstitutionID: it.InstitutionID,
 				AddedAt:       it.AddedAt.Format(time.RFC3339),
 				TokenRedacted: red,
+				Active:        id == activeItem,
 			})
 		}
 		return output.Emit(out)
@@ -268,6 +286,7 @@ func init() {
 
 	authAddCmd.Flags().StringVar(&addEnv, "env", "", "sandbox or production (defaults to value from `fin auth setup`)")
 	authAddCmd.Flags().StringVar(&addPublicTok, "public-token", "", "skip browser flow; exchange this public_token directly")
+	authAddCmd.Flags().BoolVar(&addUse, "use", false, "point the `default` profile at this newly-linked item and activate it")
 	authCmd.AddCommand(authAddCmd)
 
 	authCmd.AddCommand(authListCmd)
