@@ -1,0 +1,9 @@
+{
+  "scripts": {
+    "setup": "./scripts/conductor-setup.sh",
+    "run": "make build",
+    "archive": "",
+    "enterpriseDataPrivacy": true
+  },
+  "runScriptMode": "nonconcurrent"
+}

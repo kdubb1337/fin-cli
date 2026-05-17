@@ -8,3 +8,7 @@ dist/
 .idea/
 .vscode/
 .DS_Store
+
+# Local-only Claude Code settings
+.claude/settings.local.json
+.claude/settings.local.json.proposed
